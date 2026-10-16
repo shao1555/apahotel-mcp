@@ -51,6 +51,8 @@ public sealed class ApaHotelTools(HotelCatalog catalog, ApaClient client, ILogge
     [Description("""
         1 軒のアパホテルについて、指定日程の空室と料金（税込・全泊・全室の合計）を公式サイトから取得する。
         既定では素泊まりプランのうち最安の部屋 1 件を返す。満室の部屋タイプは返らない。
+        結果を利用者に示すときは reserve_url（日程・泊数・人数・部屋を指定済みの予約画面）と
+        calendar_url（公式サイトの料金カレンダー）をリンクとして添えること。
         """)]
     public async Task<object> GetHotelPrices(
         [Description("hotel_id（search_hotels の結果）またはホテル名の一部")] string hotel,
@@ -72,8 +74,8 @@ public sealed class ApaHotelTools(HotelCatalog catalog, ApaClient client, ILogge
             hotel = ToSummary(h),
             stay = StayInfo(stay, mealType),
             available = prices.Count > 0,
-            cheapest = prices.Count > 0 ? ToPrice(prices[0], stay) : null,
-            options = all_plans ? prices.Select(p => ToPrice(p, stay)) : null,
+            cheapest = prices.Count > 0 ? ToPrice(h, prices[0], stay) : null,
+            options = all_plans ? prices.Select(p => ToPrice(h, p, stay)) : null,
             note = prices.Count == 0 ? "指定条件で予約可能な部屋がありません（満室または販売期間外）。" : null,
         };
     }
@@ -82,6 +84,7 @@ public sealed class ApaHotelTools(HotelCatalog catalog, ApaClient client, ILogge
     [Description("""
         エリア・都道府県・キーワードで絞り込んだ複数のアパホテルについて、指定日程の空室と最安料金を調べ、安い順に返す。
         既定では素泊まりプランの最安部屋で比較する。1 軒ごとに公式サイトへ問い合わせるため、対象ホテル数は max_hotels までに絞ること。
+        結果を利用者に示すときは各ホテルの reserve_url（予約画面）と calendar_url（料金カレンダー）をリンクとして添えること。
         """)]
     public async Task<object> SearchVacancies(
         [Description("チェックイン日 (YYYY-MM-DD)")] string checkin,
@@ -131,7 +134,7 @@ public sealed class ApaHotelTools(HotelCatalog catalog, ApaClient client, ILogge
                     hotel_id = r.Hotel.HotelId,
                     name = r.Hotel.Name,
                     address = r.Hotel.Address,
-                    cheapest = ToPrice(r.Cheapest!, stay),
+                    cheapest = ToPrice(r.Hotel, r.Cheapest!, stay),
                 }),
             sold_out = results
                 .Where(r => r.Cheapest is null && r.Error is null)
@@ -146,6 +149,7 @@ public sealed class ApaHotelTools(HotelCatalog catalog, ApaClient client, ILogge
     [Description("""
         1 軒のアパホテルの 1 か月分の日別空室状況と 1 泊料金（税込）を返す。安い日を探すのに使う。
         既定では素泊まりプランを使い、日ごとに空きのある最安の部屋タイプの料金を返す。
+        結果を利用者に示すときは calendar_url（公式サイトの同じプランの料金カレンダー）をリンクとして添えること。
         """)]
     public async Task<object> GetPriceCalendar(
         [Description("hotel_id またはホテル名の一部")] string hotel,
@@ -200,6 +204,7 @@ public sealed class ApaHotelTools(HotelCatalog catalog, ApaClient client, ILogge
             hotel = ToSummary(h),
             plan = new { plan.PlanId, plan.PlanName },
             adults,
+            calendar_url = CalendarUrl(h, plan.PlanId),
             note = "料金は 1 室 1 泊あたり（税込、会員割引なし）。rooms_left は 10 以上だと実数より丸められている場合がある。連泊時の合計は get_hotel_prices で確認すること。",
             other_plans = plans.Where(p => p.PlanId != plan.PlanId).Select(p => new { p.PlanId, p.PlanName }),
             days,
@@ -262,7 +267,14 @@ public sealed class ApaHotelTools(HotelCatalog catalog, ApaClient client, ILogge
         },
     };
 
-    private static object ToPrice(PlanRoomPrice p, Stay s) => new
+    /// <summary>
+    /// 公式サイトの料金カレンダー。URL で指定できるのはプランだけで、人数は 1 名・表示月は当月・泊数は 1 から始まる。
+    /// target は値によらず「1 名で開く」フラグとして扱われる。
+    /// </summary>
+    private static string CalendarUrl(Hotel h, int planId) =>
+        $"{h.Url.TrimEnd('/')}/calendar/?target=1&planid={planId}";
+
+    private static object ToPrice(Hotel h, PlanRoomPrice p, Stay s) => new
     {
         plan_id = p.PlanId,
         plan_name = p.PlanName,
@@ -272,5 +284,7 @@ public sealed class ApaHotelTools(HotelCatalog catalog, ApaClient client, ILogge
         price_per_night = (int)Math.Round((double)p.TotalPrice / s.Nights),
         currency = "JPY",
         reserve_url = p.ReserveUrl,
+        calendar_url = CalendarUrl(h, p.PlanId),
+        calendar_note = "料金カレンダーは 1 名・当月・1 泊の表示で開く。泊数・人数・月はページ上で変更する。",
     };
 }
