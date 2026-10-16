@@ -1,0 +1,13 @@
+[tools]
+dotnet = "10.0.402"
+
+[tasks.build]
+run = "dotnet build src/ApaHotelMcp -c Release"
+
+[tasks.run]
+description = "MCP サーバーを stdio で起動"
+run = "dotnet run --project src/ApaHotelMcp -c Release --no-launch-profile"
+
+[tasks.publish]
+description = "このマシン向けの自己完結型単一バイナリを ./dist に出力（.NET ランタイム不要）"
+run = "dotnet publish src/ApaHotelMcp -c Release --use-current-runtime --self-contained -p:PublishSingleFile=true -o dist"
